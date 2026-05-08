@@ -2,13 +2,11 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Enable Corepack so the Yarn version from "packageManager" is used (Yarn 4)
 RUN corepack enable
 
-COPY nodejs_space/package.json nodejs_space/yarn.lock* ./
-RUN yarn install --network-timeout 60000
-
+# Copia TUDO primeiro, depois instala (evita sobrescrever o estado do Yarn PnP)
 COPY nodejs_space/ ./
+RUN yarn install --network-timeout 60000
 RUN yarn build
 
 FROM node:20-alpine AS runner
@@ -17,12 +15,13 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Enable Corepack here too (runner stage also runs yarn)
 RUN corepack enable
 
 COPY nodejs_space/package.json nodejs_space/yarn.lock* ./
+COPY --from=builder /app/.yarn ./.yarn
+COPY --from=builder /app/.pnp.cjs ./.pnp.cjs 2>/dev/null || true
+COPY --from=builder /app/.pnp.loader.mjs ./.pnp.loader.mjs 2>/dev/null || true
 
-# Yarn v4 deprecates --production on install; install normally in the runner image
 RUN yarn install --network-timeout 60000 && yarn cache clean
 
 COPY --from=builder /app/dist ./dist
